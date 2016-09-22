@@ -248,6 +248,21 @@ func (c *Conn) MakePool(name string) error {
 	}
 }
 
+/*
+ * MakePoolWithRule creates a new pool with specified Crushrule.
+ */
+func (c *Conn) MakePoolWithRule(name string, poolCrushRule int) error {	
+	c_name := C.CString(name)
+	defer C.free(unsafe.Pointer(c_name))
+
+	ret := int(C.rados_pool_create_with_crush_rule(c.cluster, c_name, C.uint8_t(poolCrushRule)))
+	if ret == 0 {
+		return nil
+	} else {
+		return RadosError(ret)
+	}
+}
+
 // DeletePool deletes a pool and all the data inside the pool.
 func (c *Conn) DeletePool(name string) error {
 	c_name := C.CString(name)
