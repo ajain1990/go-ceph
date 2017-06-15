@@ -91,6 +91,19 @@ func (c *Conn) OpenIOContext(pool string) (*IOContext, error) {
 	}
 }
 
+// Check if a pool exists
+func (c *Conn) PoolExists(poolName string) bool {
+    c_pool := C.CString(poolName)
+    defer C.free(unsafe.Pointer(c_pool))
+    ret := int64(C.rados_pool_lookup(c.cluster, c_pool))
+    if ret < 0 {
+        return false
+    }
+
+    return true
+}
+
+
 // ListPools returns the names of all existing pools.
 func (c *Conn) ListPools() (names []string, err error) {
 	buf := make([]byte, 4096)
