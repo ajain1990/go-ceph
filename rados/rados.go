@@ -13,12 +13,18 @@ import (
 
 type RadosError int
 
-func (e RadosError) Error() string {
-	return fmt.Sprintf("rados: %s", C.GoString(C.strerror(C.int(-e))))
-}
-
 var RadosErrorNotFound = RadosError(-C.ENOENT)
 var RadosErrorPermissionDenied = RadosError(-C.EPERM)
+var RadosErrorConnectionTimedOut = RadosError(-C.ETIMEDOUT)
+var RadosErrorConnectionTimedOutStr = "Data cluster unavailable or misconfigured"
+
+func (e RadosError) Error() string {
+	if e == RadosErrorConnectionTimedOut {
+		return RadosErrorConnectionTimedOutStr
+	}
+
+	return fmt.Sprintf("rados: %s", C.GoString(C.strerror(C.int(-e))))
+}
 
 func GetRadosError(err int) error {
 	if err == 0 {
