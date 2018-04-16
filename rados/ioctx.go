@@ -19,6 +19,9 @@ import (
 	"unsafe"
 )
 
+// TODO Use enum directly from librados
+const LIBRADOS_OP_FULL_TRY = 64
+
 // PoolStat represents Ceph pool statistics.
 type PoolStat struct {
 	// space used in bytes
@@ -82,6 +85,30 @@ func (ioctx *IOContext) SetNamespace(namespace string) {
 	C.rados_ioctx_set_namespace(ioctx.ioctx, c_ns)
 }
 
+// Executes write operation with librados op flags
+func (ioctx *IOContext) WriteOperate(oid string, data []byte,
+	offset uint64) error {
+	c_oid := C.CString(oid)
+	defer C.free(unsafe.Pointer(c_oid))
+
+	w_op := C.rados_create_write_op()
+	if unsafe.Pointer(w_op) == nil {
+		return GetRadosError(C.EIO)
+	}
+	defer C.rados_release_write_op(w_op)
+
+	C.rados_write_op_write(w_op,
+		(*C.char)(unsafe.Pointer(&data[0])),
+		(C.size_t)(len(data)),
+		(C.uint64_t)(offset))
+
+	ret := C.rados_write_op_operate(w_op, ioctx.ioctx, c_oid,
+		(*C.time_t)(unsafe.Pointer(nil)),
+		(C.int)(LIBRADOS_OP_FULL_TRY))
+
+	return GetRadosError(int(ret))
+}
+
 // Write writes len(data) bytes to the object with key oid starting at byte
 // offset offset. It returns an error, if any.
 func (ioctx *IOContext) Write(oid string, data []byte, offset uint64) error {
@@ -122,6 +149,45 @@ func (ioctx *IOContext) Append(oid string, data []byte) error {
 	return GetRadosError(int(ret))
 }
 
+// Executes read operation with librados operation flags
+func (ioctx *IOContext) ReadOperate(oid string, data []byte,
+	offset uint64) (int, error) {
+	if len(data) == 0 {
+		return 0, nil
+	}
+
+	c_oid := C.CString(oid)
+	defer C.free(unsafe.Pointer(c_oid))
+
+	r_op := C.rados_create_read_op()
+	if unsafe.Pointer(r_op) == nil {
+		return 0, GetRadosError(C.EIO)
+	}
+	defer C.rados_release_read_op(r_op)
+
+	var bytesRead uint64
+	var preval int
+	C.rados_read_op_read(r_op,
+		(C.uint64_t)(offset),
+		(C.size_t)(len(data)),
+		(*C.char)(unsafe.Pointer(&data[0])),
+		(*C.size_t)(unsafe.Pointer(&bytesRead)),
+		(*C.int)(unsafe.Pointer((&preval))))
+
+	if preval < 0 {
+		return 0, GetRadosError(preval)
+	}
+
+	ret := C.rados_read_op_operate(r_op, ioctx.ioctx, c_oid,
+		(C.int)(LIBRADOS_OP_FULL_TRY))
+
+	if ret >= 0 {
+		return int(bytesRead), nil
+	} else {
+		return 0, GetRadosError(int(ret))
+	}
+}
+
 // Read reads up to len(data) bytes from the object with key oid starting at byte
 // offset offset. It returns the number of bytes read and an error, if any.
 func (ioctx *IOContext) Read(oid string, data []byte, offset uint64) (int, error) {
@@ -146,12 +212,52 @@ func (ioctx *IOContext) Read(oid string, data []byte, offset uint64) (int, error
 	}
 }
 
+// Executes delete opration with librados op flags
+func (ioctx *IOContext) DeleteOperate(oid string) error {
+	c_oid := C.CString(oid)
+	defer C.free(unsafe.Pointer(c_oid))
+
+	rm_op := C.rados_create_write_op()
+	if unsafe.Pointer(rm_op) == nil {
+		return GetRadosError(C.EIO)
+	}
+	defer C.rados_release_write_op(rm_op)
+
+	C.rados_write_op_remove(rm_op)
+
+	ret := C.rados_write_op_operate(rm_op, ioctx.ioctx, c_oid,
+		(*C.time_t)(unsafe.Pointer(nil)),
+		(C.int)(LIBRADOS_OP_FULL_TRY))
+
+	return GetRadosError(int(ret))
+}
+
 // Delete deletes the object with key oid. It returns an error, if any.
 func (ioctx *IOContext) Delete(oid string) error {
 	c_oid := C.CString(oid)
 	defer C.free(unsafe.Pointer(c_oid))
 
 	return GetRadosError(int(C.rados_remove(ioctx.ioctx, c_oid)))
+}
+
+// Executes truncate with librados operation flags
+func (ioctx *IOContext) TruncateOperate(oid string, size uint64) error {
+	c_oid := C.CString(oid)
+	defer C.free(unsafe.Pointer(c_oid))
+
+	tr_op := C.rados_create_write_op()
+	if unsafe.Pointer(tr_op) == nil {
+		return GetRadosError(C.EIO)
+	}
+	defer C.rados_release_write_op(tr_op)
+
+	C.rados_write_op_truncate(tr_op, (C.uint64_t)(size))
+
+	ret := C.rados_write_op_operate(tr_op, ioctx.ioctx, c_oid,
+		(*C.time_t)(unsafe.Pointer(nil)),
+		(C.int)(LIBRADOS_OP_FULL_TRY))
+
+	return GetRadosError(int(ret))
 }
 
 // Truncate resizes the object with key oid to size size. If the operation
